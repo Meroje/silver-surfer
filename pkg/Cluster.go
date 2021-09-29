@@ -14,7 +14,6 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/restmapper"
-	"k8s.io/client-go/tools/clientcmd"
 )
 
 type Cluster struct {
@@ -27,35 +26,11 @@ type Cluster struct {
 	Version           string
 }
 
-func NewCluster(kubeconfig string, kubecontext string) *Cluster {
-	cluster := Cluster{}
-	pathOptions := clientcmd.NewDefaultPathOptions()
-	if len(kubeconfig) != 0 {
-		pathOptions.GlobalFile = kubeconfig
-	}
-	config, err := pathOptions.GetStartingConfig()
-	if err != nil {
-		panic(err)
-	}
-
-	configOverrides := clientcmd.ConfigOverrides{}
-	if kubecontext != "" {
-		configOverrides.CurrentContext = kubecontext
-	}
-
-	clientConfig := clientcmd.NewDefaultClientConfig(*config, &configOverrides)
-	cluster.restConfig, err = clientConfig.ClientConfig()
-	if err != nil {
-		panic(err)
-	}
-
-	if cluster.disco, err = discovery.NewDiscoveryClientForConfig(cluster.restConfig); err != nil {
-		panic(err)
-	}
-
-	cluster.clientset, err = dynamic.NewForConfig(cluster.restConfig)
-	if err != nil {
-		panic(err)
+func NewCluster(clientConfig *rest.Config) *Cluster {
+	cluster := Cluster{
+		restConfig: clientConfig,
+		disco:      discovery.NewDiscoveryClientForConfigOrDie(clientConfig),
+		clientset:  dynamic.NewForConfigOrDie(clientConfig),
 	}
 
 	return &cluster

@@ -119,7 +119,6 @@ func AddKubeaddFlags(cmd *cobra.Command, config *Config) *cobra.Command {
 	cmd.Flags().StringVarP(&config.SourceKubernetesVersion, "source-kubernetes-version", "", "", "Version of Kubernetes of the cluster on which kubernetes objects are deployed currently, ignored in case cluster is provided. In case of directory defaults to same as target-kubernetes-version.")
 	//cmd.Flags().StringVarP(&config.OutputFormat, "output", "o", "", fmt.Sprintf("The format of the output of this script. Options are: %v", "stdOut"))
 	//cmd.Flags().BoolVar(&config.Quiet, "quiet", false, "Silences any output aside from the direct results")
-	cmd.Flags().BoolVar(&config.InsecureSkipTLSVerify, "insecure-skip-tls-verify", false, "If true, the server's certificate will not be checked for validity. This will make your HTTPS connections insecure")
 	cmd.Flags().StringSliceVarP(&config.SelectNamespaces, "select-namespaces", "", []string{}, "A comma-separated list of namespaces to be selected, if left empty all namespaces are selected")
 	cmd.Flags().StringSliceVarP(&config.IgnoreNamespaces, "ignore-namespaces", "", []string{"kube-system"}, "A comma-separated list of namespaces to be skipped")
 	cmd.Flags().StringSliceVarP(&config.IgnoreKinds, "ignore-kinds", "", []string{"event","CustomResourceDefinition"}, "A comma-separated list of kinds to be skipped")

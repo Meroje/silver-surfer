@@ -22,10 +22,6 @@ package main
 import (
 	"crypto/tls"
 	"fmt"
-	"github.com/devtron-labs/silver-surfer/kubedd"
-	"github.com/devtron-labs/silver-surfer/pkg"
-	log2 "github.com/devtron-labs/silver-surfer/pkg/log"
-	"github.com/prometheus/common/log"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -33,21 +29,26 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/devtron-labs/silver-surfer/kubedd"
+	"github.com/devtron-labs/silver-surfer/pkg"
+	log2 "github.com/devtron-labs/silver-surfer/pkg/log"
+	"github.com/prometheus/common/log"
+
 	"github.com/fatih/color"
 	multierror "github.com/hashicorp/go-multierror"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
+	"k8s.io/cli-runtime/pkg/genericclioptions"
 )
 
 var (
-	version                   = "0.1.0"
-	commit                    = "none"
-	date                      = "unknown"
-	directories               = make([]string, 0)
-	ignoredPathPatterns       = make([]string, 0)
-	kubeconfig                = ""
-	kubecontext               = ""
-  noColor                   = false
+	version             = "0.1.0"
+	commit              = "none"
+	date                = "unknown"
+	directories         = make([]string, 0)
+	ignoredPathPatterns = make([]string, 0)
+	kubeFlags           = genericclioptions.NewConfigFlags(false)
+	noColor             = false
 	// forceColor tells kubedd to use colored output even if
 	// stdout is not a TTY
 	forceColor bool
@@ -97,9 +98,9 @@ var RootCmd = &cobra.Command{
 		// Assert that colors will definitely be used if requested
 		if forceColor {
 			color.NoColor = false
-    } else if noColor {
-      color.NoColor = true
-    }
+		} else if noColor {
+			color.NoColor = true
+		}
 
 		//if len(args) < 1 && len(directories) < 1 && len(kubeconfig) < 1 {
 		//	log.Error(errors.New("at least one file or one directory or kubeconfig path should be passed as argument"))
@@ -167,7 +168,9 @@ func processFiles(args []string) bool {
 func processCluster() bool {
 	success := true
 	outputManager := pkg.GetOutputManager(config.OutputFormat, noColor)
-	cluster := pkg.NewCluster(kubeconfig, kubecontext)
+	kubeFlags.ToRawKubeConfigLoader()
+	restconfig, _ := kubeFlags.ToRESTConfig()
+	cluster := pkg.NewCluster(restconfig)
 	results, err := kubedd.ValidateCluster(cluster, config)
 	if err != nil {
 		log.Error(err)
@@ -191,8 +194,6 @@ func processCluster() bool {
 	}
 	return success
 }
-
-
 
 // hasErrors returns truthy if any of the provided results
 // contain errors.
@@ -270,15 +271,14 @@ func init() {
 		rootCmdName = strings.Replace(rootCmdName, "-", " ", 1)
 	}
 	RootCmd.Use = fmt.Sprintf("%s <file> [file...]", rootCmdName)
+	kubeFlags.AddFlags(RootCmd.Flags())
 	pkg.AddKubeaddFlags(RootCmd, config)
 	RootCmd.Flags().BoolVarP(&forceColor, "force-color", "", false, "Force colored output even if stdout is not a TTY")
-  RootCmd.Flags().BoolVarP(&noColor, "no-color", "", false, "Display results without color")
+	RootCmd.Flags().BoolVarP(&noColor, "no-color", "", false, "Display results without color")
 	RootCmd.SetVersionTemplate(`{{.Version}}`)
 	RootCmd.Flags().StringSliceVarP(&directories, "directories", "d", []string{}, "A comma-separated list of directories to recursively search for YAML documents")
 	RootCmd.Flags().StringSliceVarP(&ignoredPathPatterns, "ignored-path-patterns", "i", []string{}, "A comma-separated list of regular expressions specifying paths to ignore")
 	RootCmd.Flags().StringSliceVarP(&ignoredPathPatterns, "ignored-filename-patterns", "", []string{}, "An alias for ignored-path-patterns")
-	RootCmd.Flags().StringVarP(&kubeconfig, "kubeconfig", "", "", "Path of kubeconfig file of cluster to be scanned")
-	RootCmd.Flags().StringVarP(&kubecontext, "kubecontext", "", "", "Kubecontext to be selected")
 
 	viper.SetEnvPrefix("KUBEADD")
 	viper.AutomaticEnv()
