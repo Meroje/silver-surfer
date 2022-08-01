@@ -5,6 +5,7 @@ import (
 	"io"
 	"math"
 
+	"github.com/mattn/go-runewidth"
 	"github.com/mgutz/ansi"
 )
 
@@ -26,8 +27,8 @@ func DefaultConfig() *Config {
 		AlternateColors: true,
 		TitleColorCode:  ansi.ColorCode("white+buf"),
 		AltColorCodes: []string{
-			ansi.ColorCode("white"),
-			ansi.ColorCode("white:236"),
+			"",
+			"\u001b[40m",
 		},
 	}
 }
@@ -60,24 +61,25 @@ func (t Table) WriteTable(w io.Writer, c *Config) error {
 		fmt.Fprintf(w, " [%*v]  ", idLen, "ID")
 	}
 	for i, header := range t.Headers {
-		fmt.Fprintf(w, " %-*s  ", spacing[i], header)
+		fmt.Fprintf(w, "  %s", runewidth.FillRight(header, spacing[i]))
 	}
 	if c.Color {
 		fmt.Fprint(w, ansi.Reset)
 	}
 	fmt.Fprintln(w)
 
+	color := c.Color && c.AlternateColors && len(c.AltColorCodes) > 1
 	for n, row := range t.Rows {
-		if c.Color && c.AlternateColors {
+		if color {
 			fmt.Fprint(w, c.AltColorCodes[n%len(c.AltColorCodes)])
 		}
 		if c.ShowIndex {
 			fmt.Fprintf(w, " [%*v]  ", idLen, n)
 		}
 		for i, v := range row {
-			fmt.Fprintf(w, " %-*s  ", spacing[i], v)
+			fmt.Fprintf(w, "  %s", runewidth.FillRight(v, spacing[i]))
 		}
-		if c.Color && c.AlternateColors {
+		if color {
 			fmt.Fprint(w, ansi.Reset)
 		}
 		fmt.Fprintln(w)
@@ -90,19 +92,20 @@ func (t Table) spacing() []int {
 	s := make([]int, len(t.Headers))
 
 	for i, header := range t.Headers {
-		s[i] = len(header)
+		s[i] = runewidth.StringWidth(header)
 	}
 
 	for _, arr := range t.Rows {
 		for i, v := range arr {
 			if len(v) > s[i] {
-				s[i] = len(v)
+				s[i] = runewidth.StringWidth(v)
 			}
 		}
 	}
 
 	return s
 }
+
 func digits(n int) int {
 	if n == 0 {
 		return 1

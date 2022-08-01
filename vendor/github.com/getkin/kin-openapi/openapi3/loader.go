@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
-	"net/http"
 	"net/url"
 	"path"
 	"path/filepath"
@@ -14,7 +12,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ghodss/yaml"
+	"github.com/invopop/yaml"
 )
 
 func foundUnresolvedRef(ref string) error {
@@ -31,9 +29,11 @@ type Loader struct {
 	IsExternalRefsAllowed bool
 
 	// ReadFromURIFunc allows overriding the any file/URL reading func
-	ReadFromURIFunc func(loader *Loader, url *url.URL) ([]byte, error)
+	ReadFromURIFunc ReadFromURIFunc
 
 	Context context.Context
+
+	rootDir string
 
 	visitedPathItemRefs map[string]struct{}
 
@@ -66,6 +66,7 @@ func (loader *Loader) LoadFromURI(location *url.URL) (*T, error) {
 
 // LoadFromFile loads a spec from a local file path
 func (loader *Loader) LoadFromFile(location string) (*T, error) {
+	loader.rootDir = path.Dir(location)
 	return loader.LoadFromURI(&url.URL{Path: filepath.ToSlash(location)})
 }
 
@@ -118,22 +119,7 @@ func (loader *Loader) readURL(location *url.URL) ([]byte, error) {
 	if f := loader.ReadFromURIFunc; f != nil {
 		return f(loader, location)
 	}
-
-	if location.Scheme != "" && location.Host != "" {
-		resp, err := http.Get(location.String())
-		if err != nil {
-			return nil, err
-		}
-		defer resp.Body.Close()
-		if resp.StatusCode > 399 {
-			return nil, fmt.Errorf("error loading %q: request returned status code %d", location.String(), resp.StatusCode)
-		}
-		return ioutil.ReadAll(resp.Body)
-	}
-	if location.Scheme != "" || location.Host != "" || location.RawQuery != "" {
-		return nil, fmt.Errorf("unsupported URI: %q", location.String())
-	}
-	return ioutil.ReadFile(location.Path)
+	return DefaultReadFromURI(loader, location)
 }
 
 // LoadFromData loads a spec from a byte array
@@ -415,6 +401,14 @@ func drillIntoField(cursor interface{}, fieldName string) (interface{}, error) {
 	}
 }
 
+func (loader *Loader) documentPathForRecursiveRef(current *url.URL, resolvedRef string) *url.URL {
+	if loader.rootDir == "" {
+		return current
+	}
+	return &url.URL{Path: path.Join(loader.rootDir, resolvedRef)}
+
+}
+
 func (loader *Loader) resolveRef(doc *T, ref string, path *url.URL) (*T, string, *url.URL, error) {
 	if ref != "" && ref[0] == '#' {
 		return doc, ref, path, nil
@@ -474,6 +468,7 @@ func (loader *Loader) resolveHeaderRef(doc *T, component *HeaderRef, documentPat
 				return err
 			}
 			component.Value = resolved.Value
+			documentPath = loader.documentPathForRecursiveRef(documentPath, resolved.Ref)
 		}
 	}
 	value := component.Value
@@ -521,6 +516,7 @@ func (loader *Loader) resolveParameterRef(doc *T, component *ParameterRef, docum
 				return err
 			}
 			component.Value = resolved.Value
+			documentPath = loader.documentPathForRecursiveRef(documentPath, resolved.Ref)
 		}
 	}
 	value := component.Value
@@ -577,6 +573,7 @@ func (loader *Loader) resolveRequestBodyRef(doc *T, component *RequestBodyRef, d
 				return err
 			}
 			component.Value = resolved.Value
+			documentPath = loader.documentPathForRecursiveRef(documentPath, resolved.Ref)
 		}
 	}
 	value := component.Value
@@ -632,6 +629,7 @@ func (loader *Loader) resolveResponseRef(doc *T, component *ResponseRef, documen
 				return err
 			}
 			component.Value = resolved.Value
+			documentPath = loader.documentPathForRecursiveRef(documentPath, resolved.Ref)
 		}
 	}
 	value := component.Value
@@ -701,6 +699,7 @@ func (loader *Loader) resolveSchemaRef(doc *T, component *SchemaRef, documentPat
 				return err
 			}
 			component.Value = resolved.Value
+			documentPath = loader.documentPathForRecursiveRef(documentPath, resolved.Ref)
 		}
 	}
 	value := component.Value
@@ -764,7 +763,7 @@ func (loader *Loader) resolveSecuritySchemeRef(doc *T, component *SecurityScheme
 	if ref := component.Ref; ref != "" {
 		if isSingleRefElement(ref) {
 			var scheme SecurityScheme
-			if documentPath, err = loader.loadSingleElementFromURI(ref, documentPath, &scheme); err != nil {
+			if _, err = loader.loadSingleElementFromURI(ref, documentPath, &scheme); err != nil {
 				return err
 			}
 			component.Value = &scheme
@@ -778,6 +777,7 @@ func (loader *Loader) resolveSecuritySchemeRef(doc *T, component *SecurityScheme
 				return err
 			}
 			component.Value = resolved.Value
+			_ = loader.documentPathForRecursiveRef(documentPath, resolved.Ref)
 		}
 	}
 	return nil
@@ -800,7 +800,7 @@ func (loader *Loader) resolveExampleRef(doc *T, component *ExampleRef, documentP
 	if ref := component.Ref; ref != "" {
 		if isSingleRefElement(ref) {
 			var example Example
-			if documentPath, err = loader.loadSingleElementFromURI(ref, documentPath, &example); err != nil {
+			if _, err = loader.loadSingleElementFromURI(ref, documentPath, &example); err != nil {
 				return err
 			}
 			component.Value = &example
@@ -814,6 +814,7 @@ func (loader *Loader) resolveExampleRef(doc *T, component *ExampleRef, documentP
 				return err
 			}
 			component.Value = resolved.Value
+			_ = loader.documentPathForRecursiveRef(documentPath, resolved.Ref)
 		}
 	}
 	return nil
@@ -841,6 +842,7 @@ func (loader *Loader) resolveCallbackRef(doc *T, component *CallbackRef, documen
 				return err
 			}
 			component.Value = resolved.Value
+			documentPath = loader.documentPathForRecursiveRef(documentPath, resolved.Ref)
 		}
 	}
 	value := component.Value
@@ -924,7 +926,7 @@ func (loader *Loader) resolveLinkRef(doc *T, component *LinkRef, documentPath *u
 	if ref := component.Ref; ref != "" {
 		if isSingleRefElement(ref) {
 			var link Link
-			if documentPath, err = loader.loadSingleElementFromURI(ref, documentPath, &link); err != nil {
+			if _, err = loader.loadSingleElementFromURI(ref, documentPath, &link); err != nil {
 				return err
 			}
 			component.Value = &link
@@ -938,6 +940,7 @@ func (loader *Loader) resolveLinkRef(doc *T, component *LinkRef, documentPath *u
 				return err
 			}
 			component.Value = resolved.Value
+			_ = loader.documentPathForRecursiveRef(documentPath, resolved.Ref)
 		}
 	}
 	return nil
